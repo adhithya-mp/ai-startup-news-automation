@@ -1,0 +1,338 @@
+{
+  "name": "ai-analyst-workflow",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        1456,
+        16
+      ],
+      "id": "8b8ca215-5981-47e9-9442-eafbf23eb25c",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "url": "https://gnews.io/api/v4/search?q=\"ai startup\" OR \"artifical intelligence\"&lang=en&&max=10&apikey=e83876ae6d71865fdd46c9864ce938ce",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1680,
+        16
+      ],
+      "id": "beb9bd31-4f3f-44d2-98c2-6ca65f56130c",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "try {\n  const items = $input.all();\n  const data = items[0]?.json;\n\n  if (!data || !data.articles || data.articles.length === 0) {\n    return [{ json: { error: \"No articles found\" } }];\n  }\n\n  return data.articles.map(article => ({\n    json: {\n      title: article.title || \"\",\n      description: article.description || \"\",\n      content: article.content || \"\",\n      url: article.url || \"\",\n      publishedAt: article.publishedAt || \"\",\n      source: article.source?.name || \"\"\n    }\n  }));\n  \n} catch (err) {\n  return [{ json: { error: \"Error cleaning articles: \" + err.message } }];\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1904,
+        16
+      ],
+      "id": "85d37afc-8d5a-4baa-a361-df4c88a5156e",
+      "name": "clean article"
+    },
+    {
+      "parameters": {
+        "jsCode": "try {\n  const items = $input.all();\n\n  if (!items || items.length === 0) {\n    return [{ json: { error: \"No articles to process\" } }];\n  }\n\n  const seen = new Set();\n  const output = [];\n\n  for (const item of items) {\n    const title = item.json.title?.toLowerCase().trim() || \"\";\n\n    if (title === \"\") continue;\n\n    if (!seen.has(title)) {\n      seen.add(title);\n      output.push(item);\n    }\n  }\n\n  if (output.length === 0) {\n    return [{ json: { error: \"All articles were duplicates\" } }];\n  }\n\n  return output;\n\n} catch (err) {\n  return [{ json: { error: \"Deduplication failed: \" + err.message } }];\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2128,
+        16
+      ],
+      "id": "bb87d9f0-f4ef-4ab7-877e-3afa275998aa",
+      "name": "de-duplication"
+    },
+    {
+      "parameters": {
+        "jsCode": "try {\n  const items = $input.all().map(item => item.json);\n\n  if (!items || items.length === 0) {\n    return [{ json: { error: \"No articles for hype filter\" } }];\n  }\n\n  const hypeWords = [\n    \"revolutionary\",\"game-changing\",\"groundbreaking\",\"innovative\",\n    \"transforming\",\"disruptive\",\"unmatched\",\"incredible\",\n    \"amazing\",\"unbelievable\",\"next level\",\"world class\",\"cutting-edge\"\n  ];\n\n  const filtered = items.filter(article => {\n    const text = (\n      (article.title || \"\") + \" \" +\n      (article.description || \"\") + \" \" +\n      (article.content || \"\")\n    ).toLowerCase();\n\n    if (text.length < 150) return false;\n\n    let hypeCount = 0;\n    for (const w of hypeWords) {\n      if (text.includes(w)) hypeCount++;\n    }\n\n    const totalWords = text.split(/\\s+/).length || 1;\n    const density = hypeCount / totalWords;\n\n    return density < 0.02;\n  });\n\n  if (filtered.length === 0) {\n    return [{ json: { error: \"All articles filtered as hype\" } }];\n  }\n\n  return filtered.map(a => ({ json: a }));\n\n} catch (err) {\n  return [{ json: { error: \"Hype filter failed: \" + err.message } }];\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2352,
+        16
+      ],
+      "id": "86f22c1e-91d8-41bf-91fb-089ca6131245",
+      "name": "hype filter"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Extract the following fields from the article below. \nAll fields must have a valid value. None can be empty.\n\nReturn ONLY a valid JSON object in this exact format:\n\n{\n  \"company_name\": \"string\",\n  \"category\": \"string\",\n  \"sentiment_score\": number,\n  \"is_funding_news\": boolean\n}\n\nRules:\n- company_name must never be empty. If not clear, infer the most likely company.\n- category must describe what type of AI (e.g., video AI, robotics AI, health AI).\n- sentiment_score must be a number between -1 and 1.\n- is_funding_news is true if funding/investment/valuation is mentioned.\n- Do not add extra text before or after the JSON.\n\nHere is the article text:\n{{ $json.title }}  \n{{ $json.description }}  \n{{ $json.content }}\n",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        2576,
+        16
+      ],
+      "id": "e11dd54f-665b-4926-86d2-efcfd16dc35f",
+      "name": "Basic LLM Chain"
+    },
+    {
+      "parameters": {
+        "model": "llama-3.1-8b-instant",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        2656,
+        240
+      ],
+      "id": "8f46fbd2-3b47-43d5-a334-1fae4603d7bf",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "5DM8TVwH59AOnoDu",
+          "name": "Groq account 4"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "id-1",
+              "name": "company_name",
+              "value": "={{ JSON.parse($json.text.replace(/```json|```/g, \"\").trim()).company_name }}",
+              "type": "string"
+            },
+            {
+              "id": "id-2",
+              "name": "category",
+              "value": "={{ JSON.parse($json.text.replace(/```json|```/g, \"\").trim()).category }}",
+              "type": "string"
+            },
+            {
+              "id": "id-3",
+              "name": "sentiment_score",
+              "value": "={{ JSON.parse($json.text.replace(/```json|```/g, \"\").trim()).sentiment_score }}",
+              "type": "number"
+            },
+            {
+              "id": "id-4",
+              "name": "is_funding_news",
+              "value": "={{ JSON.parse($json.text.replace(/```json|```/g, \"\").trim()).is_funding_news }}",
+              "type": "boolean"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2928,
+        16
+      ],
+      "id": "972a8d43-b4cc-46db-b93e-8af6b1aa5842",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1PyMpwnyz9afP8RF0dy6B5DfZPdSkegExAdIzeMjF9AQ",
+          "mode": "list",
+          "cachedResultName": "AI Startup News",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1PyMpwnyz9afP8RF0dy6B5DfZPdSkegExAdIzeMjF9AQ/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 350467684,
+          "mode": "list",
+          "cachedResultName": "news",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1PyMpwnyz9afP8RF0dy6B5DfZPdSkegExAdIzeMjF9AQ/edit#gid=350467684"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "company_name": "={{ $json.company_name }}",
+            "category": "={{ $json.category }}",
+            "sentiment_score": "={{ $json.sentiment_score }}",
+            "is_funding_news": "={{ $json.is_funding_news }}"
+          },
+          "matchingColumns": [
+            "company_name"
+          ],
+          "schema": [
+            {
+              "id": "company_name",
+              "displayName": "company_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "sentiment_score",
+              "displayName": "sentiment_score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "is_funding_news",
+              "displayName": "is_funding_news",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        3136,
+        16
+      ],
+      "id": "4135f18e-e091-44d2-be91-2e31ad0ce20d",
+      "name": "Append or update row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "H3vHA1b4ruHuBdzK",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "clean article",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "clean article": {
+      "main": [
+        [
+          {
+            "node": "de-duplication",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "de-duplication": {
+      "main": [
+        [
+          {
+            "node": "hype filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "hype filter": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Append or update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "4f450c08-0406-4856-aab1-d3cecc7bbbb8",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "e3fc4dabb2faa04b8ecc9a7b163a9afa5cbf912ba7ba8708fe6573117bdc046c"
+  },
+  "id": "8kv0UuNISW17KYHl",
+  "tags": []
+}
