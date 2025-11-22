@@ -71,4 +71,14 @@ is_funding_news
 6.Click Execute Workflow to run the automation.
 
 Once executed, the workflow will automatically fetch the news, clean and filter the articles, extract structured fields using Groq LLM, and save everything into your Google Sheet.
+**Demo Files**
+
+All demo files (video and screenshots) are stored here:
+Google Drive Folder: https://drive.google.com/drive/folders/1f_tOUR9sRnkR_a-5i27NNPyzQWl0mltl?usp=drive_link
+
+Contents:
+- Demo video
+- Workflow screenshots
+
+
 
